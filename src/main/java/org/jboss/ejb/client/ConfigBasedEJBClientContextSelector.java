@@ -25,7 +25,10 @@ package org.jboss.ejb.client;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
+import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.sasl.RealmCallback;
+
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -363,7 +366,13 @@ class ConfigBasedEJBClientContextSelector implements ContextSelector<EJBClientCo
             for (Callback current : callbacks) {
                 if (current instanceof NameCallback) {
                     NameCallback ncb = (NameCallback) current;
-                    ncb.setName("anonymous");
+                    ncb.setName("ejbuser");
+                } else  if (current instanceof PasswordCallback) {
+                    PasswordCallback pcb = (PasswordCallback)current;
+                    pcb.setPassword("ejbpassword".toCharArray());
+                } else if (current instanceof RealmCallback) {
+                    RealmCallback rcb = (RealmCallback) current;
+                    rcb.setText(rcb.getDefaultText());
                 } else {
                     throw new UnsupportedCallbackException(current);
                 }
