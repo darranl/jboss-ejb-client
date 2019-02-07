@@ -736,7 +736,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     @NotNull
-    AuthenticationContext getAuthenticationContext() {
+    public AuthenticationContext getAuthenticationContext() {
         return authenticationContext;
     }
 

@@ -35,6 +35,8 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -97,6 +99,7 @@ import org.wildfly.common.Assert;
 import org.wildfly.common.function.ExceptionBiFunction;
 import org.wildfly.common.net.CidrAddress;
 import org.wildfly.naming.client.NamingProvider;
+import org.wildfly.security.auth.client.AuthenticationContext;
 import org.wildfly.transaction.client.AbstractTransaction;
 import org.wildfly.transaction.client.LocalTransaction;
 import org.wildfly.transaction.client.RemoteTransaction;
@@ -364,7 +367,7 @@ class EJBClientChannel {
                     }
 
                     // write txn context
-                    invocation.setOutflowHandle(writeTransaction(invocationContext.getTransaction(), marshaller));
+                    invocation.setOutflowHandle(writeTransaction(invocationContext.getTransaction(), marshaller, invocationContext.getAuthenticationContext()));
                 }
                 // write the invocation locator itself
                 marshaller.writeObject(locator);
@@ -547,7 +550,30 @@ class EJBClientChannel {
         }
     }
 
-    private XAOutflowHandle writeTransaction(final Transaction transaction, final DataOutput dataOutput) throws IOException, RollbackException, SystemException {
+    private XAOutflowHandle writeTransaction(final Transaction transaction, final DataOutput dataOutput,
+            final AuthenticationContext authenticationContext) throws IOException, RollbackException, SystemException {
+        if (authenticationContext != null) {
+            Logs.MAIN.info("Using existing AuthenticationContext for writeTransaction(...)");
+            try {
+                return authenticationContext.run((PrivilegedExceptionAction<XAOutflowHandle>) () -> _writeTransaction(transaction, dataOutput));
+            } catch (PrivilegedActionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof IOException) {
+                    throw (IOException) cause;
+                } else if (cause instanceof RollbackException) {
+                    throw (RollbackException) cause;
+                } else if (cause instanceof SystemException) {
+                    throw (SystemException) cause;
+                }
+                throw new RuntimeException(e);
+            }
+        } else {
+            Logs.MAIN.info("No existing AuthenticationContext for writeTransaction(...)");
+            return _writeTransaction(transaction, dataOutput);
+        }
+    }
+
+    private XAOutflowHandle _writeTransaction(final Transaction transaction, final DataOutput dataOutput) throws IOException, RollbackException, SystemException {
         final URI location = channel.getConnection().getPeerURI();
         if (transaction == null) {
             dataOutput.writeByte(0);
@@ -624,7 +650,7 @@ class EJBClientChannel {
             writeRawIdentifier(statelessLocator, out);
             if (version >= 3) {
                 out.writeInt(identity.getId());
-                invocation.setOutflowHandle(writeTransaction(clientInvocationContext.getTransaction(), out));
+                invocation.setOutflowHandle(writeTransaction(clientInvocationContext.getTransaction(), out, clientInvocationContext.getAuthenticationContext()));
             }
         } catch (IOException e) {
             CreateException createException = new CreateException(e.getMessage());
